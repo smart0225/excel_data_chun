@@ -18,11 +18,12 @@ def _safe_sheet_filename(sheet_name):
     return filename or "sheet"
 
 
-def _keep_first_xlsx_sheet(source_path, temporary_path):
+def _keep_xlsx_sheet(source_path, temporary_path, sheet_name):
     workbook = load_workbook(source_path)
     try:
-        for sheet_name in workbook.sheetnames[1:]:
-            del workbook[sheet_name]
+        for other_sheet_name in workbook.sheetnames:
+            if other_sheet_name != sheet_name:
+                del workbook[other_sheet_name]
         workbook.save(temporary_path)
     finally:
         workbook.close()
@@ -64,7 +65,7 @@ def _keep_first_xls_sheet(source_path, temporary_path):
 
 
 def split_workbooks(directory):
-    """Export each sheet after the first as a values-only .xlsx workbook."""
+    """Export each sheet after the first as a separate .xlsx workbook."""
     directory_path = Path(directory)
     if not directory_path.is_dir():
         raise NotADirectoryError(f"Not a directory: {directory_path}")
@@ -114,18 +115,33 @@ def split_workbooks(directory):
                         )
 
                     for index, sheet_name in enumerate(sheet_names[1:], start=1):
-                        frame = pd.read_excel(
-                            excel_file,
-                            sheet_name=sheet_name,
-                            engine=engine,
-                        )
                         staged_path = temp_dir_path / f"sheet-{index}.xlsx"
-                        frame.to_excel(staged_path, index=False, sheet_name=sheet_name)
+                        if engine == "openpyxl":
+                            _keep_xlsx_sheet(
+                                source_path,
+                                staged_path,
+                                sheet_name,
+                            )
+                        else:
+                            frame = pd.read_excel(
+                                excel_file,
+                                sheet_name=sheet_name,
+                                engine=engine,
+                            )
+                            frame.to_excel(
+                                staged_path,
+                                index=False,
+                                sheet_name=sheet_name,
+                            )
                         staged_outputs.append(staged_path)
 
                 staged_source = temp_dir_path / source_path.name
                 if engine == "openpyxl":
-                    _keep_first_xlsx_sheet(source_path, staged_source)
+                    _keep_xlsx_sheet(
+                        source_path,
+                        staged_source,
+                        sheet_names[0],
+                    )
                 else:
                     LOGGER.warning(
                         "%s is .xls; keeping its first sheet will not preserve "
